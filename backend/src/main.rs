@@ -36,7 +36,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .allow_headers(Any);
 
-    let app = routes::create_router(state).layer(cors);
+    let storage = services::storage::configure()?.map(Arc::new);
+    let app = routes::create_router(state, storage).layer(cors);
 
     // Bind strictly to 127.0.0.1 for local security requirements
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));

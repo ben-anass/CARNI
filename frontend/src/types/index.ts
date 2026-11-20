@@ -102,6 +102,7 @@ export interface HealthEvent {
 }
 
 export interface MedicalDocument {
+  has_file?: boolean;
   id: string;
   title: string;
   category: DocumentCategory;

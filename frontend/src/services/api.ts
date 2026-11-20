@@ -82,19 +82,22 @@ export const api = {
     return res.json();
   },
 
-  async createDocument(doc: Omit<MedicalDocument, 'id' | 'created_at'>): Promise<MedicalDocument> {
-    const res = await fetch(`${API_BASE}/documents`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(doc),
-    });
-    if (!res.ok) throw new Error('Erreur lors du dépôt du document');
+  async createDocument(doc: Omit<MedicalDocument, 'id' | 'created_at'>, file: File): Promise<MedicalDocument> {
+    const body = new FormData();
+    body.append('metadata', JSON.stringify(doc));
+    body.append('file', file);
+    const res = await fetch(`${API_BASE}/documents`, { method: 'POST', body });
+    if (!res.ok) throw new Error(await res.text() || 'Erreur lors du dépôt du document');
     return res.json();
+  },
+
+  documentDownloadUrl(id: string): string {
+    return `${API_BASE}/documents/${encodeURIComponent(id)}/file`;
   },
 
   async deleteDocument(id: string): Promise<void> {
     const res = await fetch(`${API_BASE}/documents/${id}`, { method: 'DELETE' });
-    if (!res.ok) throw new Error('Erreur lors de la suppression du document');
+    if (!res.ok) throw new Error(await res.text() || 'Erreur lors de la suppression du document');
   },
 
   async getSharingSessions(): Promise<SharingSession[]> {

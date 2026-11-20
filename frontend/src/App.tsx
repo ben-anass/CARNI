@@ -245,7 +245,7 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleUploadDocument = async (docData: Omit<MedicalDocument, 'id' | 'created_at'>) => {
+  const handleUploadDocument = async (docData: Omit<MedicalDocument, 'id' | 'created_at'>, file: File) => {
     if (isDemoMode) {
       const newDoc: MedicalDocument = {
         ...docData,
@@ -257,14 +257,11 @@ export const App: React.FC = () => {
       return;
     }
 
-    // Backend connected: send metadata to backend, await confirmation
-    // Note: binary file storage is not implemented — only metadata is stored (see PROTOTYPE_NOTE)
     try {
-      const created = await api.createDocument(docData);
+      const created = await api.createDocument(docData, file);
       setDocuments((prev) => [created, ...prev]);
-      addToast('success', 'Document enregistré', `"${created.title}" a été indexé dans le coffre-fort.`);
-      const logs = await api.getAuditLogs();
-      setAuditLogs(logs);
+      addToast('success', 'Document enregistré', `"${created.title}" a été enregistré dans le coffre-fort.`);
+      void api.getAuditLogs().then(setAuditLogs).catch(console.error);
     } catch (err: any) {
       addToast('error', 'Erreur de dépôt', err?.message || 'Impossible d\'enregistrer le document.');
       throw err;

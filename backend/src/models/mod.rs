@@ -110,6 +110,8 @@ pub struct CreateEventRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MedicalDocument {
+    #[serde(default)]
+    pub has_file: bool,
     pub id: String,
     pub title: String,
     pub category: String,
@@ -130,8 +132,11 @@ pub struct MedicalDocument {
 pub struct CreateDocumentRequest {
     pub title: String,
     pub category: String,
+    #[serde(default)]
     pub file_name: String,
+    #[serde(default)]
     pub file_type: String,
+    #[serde(default)]
     pub file_size_bytes: u64,
     pub issue_date: String,
     pub doctor_or_lab: String,
