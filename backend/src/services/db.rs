@@ -455,11 +455,16 @@ pub fn create_event(conn: &Connection, req: CreateEventRequest) -> Result<Health
 }
 
 pub fn update_event(conn: &Connection, id: &str, req: CreateEventRequest) -> Result<HealthEvent> {
+    let created_at: String = conn.query_row(
+        "SELECT created_at FROM events WHERE id = ?1",
+        params![id],
+        |row| row.get(0),
+    )?;
     let now = Utc::now().to_rfc3339();
     let vs_json = serde_json::to_string(&req.vital_signs).unwrap_or_default();
     let att_json = serde_json::to_string(&req.attachments).unwrap_or_default();
 
-    conn.execute(
+    let updated_rows = conn.execute(
         "UPDATE events SET title=?1, event_date=?2, category=?3, doctor_or_facility=?4, description=?5, treatment_notes=?6, vital_signs_json=?7, attachments_json=?8, updated_at=?9
          WHERE id=?10",
         params![
@@ -475,6 +480,9 @@ pub fn update_event(conn: &Connection, id: &str, req: CreateEventRequest) -> Res
             id
         ],
     )?;
+    if updated_rows == 0 {
+        return Err(rusqlite::Error::QueryReturnedNoRows);
+    }
 
     add_audit_log(
         conn,
@@ -496,13 +504,16 @@ pub fn update_event(conn: &Connection, id: &str, req: CreateEventRequest) -> Res
         treatment_notes: req.treatment_notes,
         vital_signs: req.vital_signs,
         attachments: req.attachments,
-        created_at: now.clone(),
+        created_at,
         updated_at: Some(now),
     })
 }
 
 pub fn delete_event(conn: &Connection, id: &str) -> Result<()> {
-    conn.execute("DELETE FROM events WHERE id = ?1", params![id])?;
+    let deleted_rows = conn.execute("DELETE FROM events WHERE id = ?1", params![id])?;
+    if deleted_rows == 0 {
+        return Err(rusqlite::Error::QueryReturnedNoRows);
+    }
     add_audit_log(
         conn,
         "RECORD_DELETED",
@@ -980,10 +991,86 @@ mod tests {
         };
         let updated = update_event(&conn, &created.id, update_req).expect("Should update event");
         assert_eq!(updated.title, "Consultation Test Dermatologie Modifiée");
+        assert_eq!(updated.created_at, created.created_at);
+        assert!(updated.updated_at.is_some());
+
+        let persisted = get_events(&conn).expect("Should reload updated event");
+        let persisted_event = persisted
+            .iter()
+            .find(|event| event.id == created.id)
+            .unwrap();
+        assert_eq!(persisted_event.title, updated.title);
+        assert_eq!(persisted_event.created_at, created.created_at);
 
         delete_event(&conn, &created.id).expect("Should delete event");
         let events_final = get_events(&conn).expect("Should get events");
         assert_eq!(events_final.len(), initial_len);
+        assert!(delete_event(&conn, &created.id).is_err());
+        assert!(update_event(
+            &conn,
+            &created.id,
+            CreateEventRequest {
+                title: "Missing event".to_string(),
+                event_date: "2026-02-01".to_string(),
+                category: "CONSULTATION".to_string(),
+                doctor_or_facility: "Dr. Alami".to_string(),
+                description: "Not persisted".to_string(),
+                treatment_notes: None,
+                vital_signs: None,
+                attachments: vec![],
+            },
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn test_event_lifecycle_persists_after_reopen() {
+        let path = std::env::temp_dir().join(format!("carni-event-{}.db", Uuid::new_v4()));
+        let conn = Connection::open(&path).expect("Should open temporary database");
+        init_db(&conn).expect("Should initialize temporary database");
+
+        let req = CreateEventRequest {
+            title: "Synthetic persistence check".to_string(),
+            event_date: "2026-02-01".to_string(),
+            category: "CONSULTATION".to_string(),
+            doctor_or_facility: "Test Clinic".to_string(),
+            description: "Synthetic test record".to_string(),
+            treatment_notes: None,
+            vital_signs: None,
+            attachments: vec![],
+        };
+        let created = create_event(&conn, req.clone()).expect("Should create event");
+        let updated = update_event(
+            &conn,
+            &created.id,
+            CreateEventRequest {
+                title: "Synthetic persistence check updated".to_string(),
+                ..req
+            },
+        )
+        .expect("Should update event");
+        drop(conn);
+
+        let conn = Connection::open(&path).expect("Should reopen temporary database");
+        init_db(&conn).expect("Should initialize reopened database");
+        let persisted = get_events(&conn).expect("Should reload persisted events");
+        let persisted_event = persisted
+            .iter()
+            .find(|event| event.id == updated.id)
+            .expect("Updated event should persist");
+        assert_eq!(persisted_event.title, updated.title);
+        assert_eq!(persisted_event.created_at, created.created_at);
+        assert_eq!(persisted_event.updated_at, updated.updated_at);
+
+        delete_event(&conn, &updated.id).expect("Should delete event");
+        drop(conn);
+
+        let conn = Connection::open(&path).expect("Should reopen database after deletion");
+        init_db(&conn).expect("Should initialize database after deletion");
+        let remaining = get_events(&conn).expect("Should reload events after deletion");
+        assert!(!remaining.iter().any(|event| event.id == updated.id));
+        drop(conn);
+        std::fs::remove_file(path).expect("Should remove temporary database");
     }
 
     #[test]

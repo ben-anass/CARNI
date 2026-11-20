@@ -153,7 +153,7 @@ export const App: React.FC = () => {
   const handleSaveEvent = async (
     eventData: Omit<HealthEvent, 'id' | 'created_at'>,
     existingId?: string
-  ) => {
+  ): Promise<boolean> => {
     if (isDemoMode) {
       // Demo mode: local-only mutations with clear warning
       if (existingId) {
@@ -175,7 +175,7 @@ export const App: React.FC = () => {
         addToast('warning', '[DÉMO] Événement ajouté localement', 'Backend non connecté — données non persistées.');
       }
       setEventToEdit(null);
-      return;
+      return true;
     }
 
     // Backend connected: await the API call, use the returned record (server ID/timestamp)
@@ -189,15 +189,27 @@ export const App: React.FC = () => {
         setEvents((prev) => [created, ...prev]);
         addToast('success', 'Événement ajouté', `"${created.title}" a été enregistré au carnet.`);
       }
-      // Refresh audit logs from backend (backend wrote the real audit entry)
-      const logs = await api.getAuditLogs();
-      setAuditLogs(logs);
-    } catch (err: any) {
-      addToast('error', 'Erreur', err?.message || 'Impossible de sauvegarder l\'événement.');
-      throw err; // let modal stay open so user can retry
-    } finally {
-      setEventToEdit(null);
+    } catch (err: unknown) {
+      addToast(
+        'error',
+        'Erreur',
+        err instanceof Error ? err.message : 'Impossible de sauvegarder l\'événement.'
+      );
+      return false;
     }
+
+    try {
+      // Refresh audit logs from backend (backend wrote the real audit entry)
+      setAuditLogs(await api.getAuditLogs());
+    } catch (err: unknown) {
+      addToast(
+        'error',
+        'Erreur de chargement du journal',
+        err instanceof Error ? err.message : 'Impossible de charger le journal d\'audit.'
+      );
+    }
+
+    return true;
   };
 
   const handleDeleteEvent = async (id: string) => {
@@ -213,10 +225,23 @@ export const App: React.FC = () => {
       await api.deleteEvent(id);
       setEvents((prev) => prev.filter((e) => e.id !== id));
       addToast('info', 'Événement supprimé', deleted ? `"${deleted.title}" a été retiré.` : undefined);
-      const logs = await api.getAuditLogs();
-      setAuditLogs(logs);
-    } catch (err: any) {
-      addToast('error', 'Erreur de suppression', err?.message || 'Impossible de supprimer l\'événement.');
+    } catch (err: unknown) {
+      addToast(
+        'error',
+        'Erreur de suppression',
+        err instanceof Error ? err.message : 'Impossible de supprimer l\'événement.'
+      );
+      return;
+    }
+
+    try {
+      setAuditLogs(await api.getAuditLogs());
+    } catch (err: unknown) {
+      addToast(
+        'error',
+        'Erreur de chargement du journal',
+        err instanceof Error ? err.message : 'Impossible de charger le journal d\'audit.'
+      );
     }
   };
 

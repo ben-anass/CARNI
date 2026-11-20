@@ -138,7 +138,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Hackathon Disclaimer */}
       <div className="mt-4 pt-3 border-t border-slate-100 text-center">
         <span className="text-[10px] text-slate-400 block font-medium">
-          CARNI MVP • Hackathon Santé Maroc 🇲🇦
+          CARNI MVP • Santé Maroc 🇲🇦
         </span>
       </div>
     </div>

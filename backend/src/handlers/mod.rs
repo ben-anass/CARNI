@@ -123,6 +123,9 @@ pub async fn update_event(
     })?;
     match db::update_event(&conn, &id, payload) {
         Ok(event) => Ok(Json(event)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
+            Err((StatusCode::NOT_FOUND, "Événement introuvable".to_string()))
+        }
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
 }
@@ -139,6 +142,9 @@ pub async fn delete_event(
     })?;
     match db::delete_event(&conn, &id) {
         Ok(_) => Ok(StatusCode::NO_CONTENT),
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
+            Err((StatusCode::NOT_FOUND, "Événement introuvable".to_string()))
+        }
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
 }

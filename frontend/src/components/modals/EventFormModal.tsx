@@ -5,7 +5,7 @@ import { HealthEvent, EventCategory, MedicalDocument } from '../../types';
 interface EventFormModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (event: Omit<HealthEvent, 'id' | 'created_at'>, existingId?: string) => void;
+  onSave: (event: Omit<HealthEvent, 'id' | 'created_at'>, existingId?: string) => Promise<boolean>;
   eventToEdit?: HealthEvent | null;
   documents: MedicalDocument[];
 }
@@ -28,6 +28,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
   const [tempC, setTempC] = useState<string>('');
   const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (eventToEdit) {
@@ -58,7 +59,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const newErrors: Record<string, string> = {};
 
@@ -77,20 +78,25 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
     if (hr.trim() && !isNaN(Number(hr))) vital_signs.hr = Number(hr);
     if (tempC.trim() && !isNaN(Number(tempC))) vital_signs.temp_c = Number(tempC);
 
-    onSave(
-      {
-        title: title.trim(),
-        event_date: eventDate,
-        category,
-        doctor_or_facility: doctorOrFacility.trim(),
-        description: description.trim(),
-        treatment_notes: treatmentNotes.trim() || undefined,
-        vital_signs: Object.keys(vital_signs).length > 0 ? vital_signs : undefined,
-        attachments: selectedDocs,
-      },
-      eventToEdit ? eventToEdit.id : undefined
-    );
-    onClose();
+    setIsSaving(true);
+    try {
+      const saved = await onSave(
+        {
+          title: title.trim(),
+          event_date: eventDate,
+          category,
+          doctor_or_facility: doctorOrFacility.trim(),
+          description: description.trim(),
+          treatment_notes: treatmentNotes.trim() || undefined,
+          vital_signs: Object.keys(vital_signs).length > 0 ? vital_signs : undefined,
+          attachments: selectedDocs,
+        },
+        eventToEdit ? eventToEdit.id : undefined
+      );
+      if (saved) onClose();
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const toggleDocument = (docId: string) => {
@@ -331,9 +337,14 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition-colors shadow-xs"
+              disabled={isSaving}
+              className="px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition-colors shadow-xs disabled:opacity-60"
             >
-              {eventToEdit ? 'Enregistrer les modifications' : 'Ajouter au carnet'}
+              {isSaving
+                ? 'Enregistrement…'
+                : eventToEdit
+                ? 'Enregistrer les modifications'
+                : 'Ajouter au carnet'}
             </button>
           </div>
         </form>

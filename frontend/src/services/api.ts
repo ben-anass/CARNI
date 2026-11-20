@@ -14,6 +14,11 @@ const API_BASE =
     ? 'http://127.0.0.1:3000/api'
     : '/api';
 
+async function throwEventMutationError(res: Response, fallback: string): Promise<never> {
+  const message = (await res.text()).trim();
+  throw new Error(message || `${fallback} (HTTP ${res.status})`);
+}
+
 export const api = {
   async checkHealth(): Promise<boolean> {
     try {
@@ -52,7 +57,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(event),
     });
-    if (!res.ok) throw new Error('Erreur lors de la création de l\'événement');
+    if (!res.ok) return throwEventMutationError(res, 'Erreur lors de la création de l\'événement');
     return res.json();
   },
 
@@ -62,13 +67,13 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(event),
     });
-    if (!res.ok) throw new Error('Erreur lors de la mise à jour de l\'événement');
+    if (!res.ok) return throwEventMutationError(res, 'Erreur lors de la mise à jour de l\'événement');
     return res.json();
   },
 
   async deleteEvent(id: string): Promise<void> {
     const res = await fetch(`${API_BASE}/events/${id}`, { method: 'DELETE' });
-    if (!res.ok) throw new Error('Erreur lors de la suppression de l\'événement');
+    if (!res.ok) await throwEventMutationError(res, 'Erreur lors de la suppression de l\'événement');
   },
 
   async getDocuments(): Promise<MedicalDocument[]> {
