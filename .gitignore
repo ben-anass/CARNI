@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build files
+dist/
+**/dist/
+target/
+**/target/
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# System files
+.DS_Store
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Rust build artifacts
+target/
+**/target/
