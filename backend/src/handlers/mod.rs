@@ -1,15 +1,17 @@
 use axum::{
-    extract::{Path, State},
-    http::StatusCode,
-    response::{IntoResponse, Json},
+    extract::{Multipart, Path, State},
+    http::{header, StatusCode},
+    response::{IntoResponse, Json, Response},
+    Extension,
 };
 use chrono::Utc;
-use rusqlite::Connection;
+use object_store::{aws::AmazonS3, path::Path as ObjectPath, ObjectStore};
+use rusqlite::{Connection, OptionalExtension};
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 
 use crate::models::*;
-use crate::services::db;
+use crate::services::{db, storage::MAX_FILE_BYTES};
 
 pub type DbState = Arc<Mutex<Connection>>;
 
@@ -164,66 +166,201 @@ pub async fn get_documents(
     }
 }
 
+type DocumentError = (StatusCode, String);
+type DocumentStorage = Option<Arc<AmazonS3>>;
+
+fn bad_upload(message: &str) -> DocumentError {
+    (StatusCode::BAD_REQUEST, message.into())
+}
+
+fn database_error(error: impl std::fmt::Display) -> DocumentError {
+    eprintln!("Document database operation failed: {error}");
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "Erreur de base de données".into(),
+    )
+}
+
+fn require_storage(storage: &DocumentStorage) -> Result<&AmazonS3, DocumentError> {
+    storage.as_deref().ok_or((
+        StatusCode::SERVICE_UNAVAILABLE,
+        "Le stockage R2 n'est pas configuré".into(),
+    ))
+}
+
+fn storage_error(error: object_store::Error) -> DocumentError {
+    eprintln!("Document storage operation failed: {error}");
+    (
+        StatusCode::BAD_GATEWAY,
+        "Le stockage R2 est indisponible".into(),
+    )
+}
+
+fn object_path(id: &str) -> ObjectPath {
+    ObjectPath::from(format!("documents/{id}"))
+}
+
+fn stored_file(db: &DbState, id: &str) -> Result<Option<(String, String)>, DocumentError> {
+    db.lock()
+        .map_err(database_error)?
+        .query_row(
+            "SELECT file_name, file_type FROM documents
+             JOIN document_files ON document_id = id WHERE id = ?1",
+            [id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(database_error)
+}
+
 pub async fn create_document(
     State(db): State<DbState>,
-    Json(mut payload): Json<CreateDocumentRequest>,
-) -> Result<(StatusCode, Json<MedicalDocument>), (StatusCode, String)> {
-    if payload.title.trim().is_empty() || payload.doctor_or_lab.trim().is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Titre et émetteur du document obligatoires".to_string(),
-        ));
-    }
-    // Validate file size and MIME type
-    let max_size: u64 = 10 * 1024 * 1024; // 10MB
-    if payload.file_size_bytes > max_size {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Fichier trop volumineux. Maximum 10 Mo".to_string(),
-        ));
-    }
-    let allowed_types = ["application/pdf", "image/jpeg", "image/png"];
-    if !allowed_types.contains(&payload.file_type.as_str()) {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Format non autorisé. Formats acceptés : PDF, JPG, PNG".to_string(),
-        ));
-    }
-
-    // Sanitize filename to prevent path traversal or injection
-    let clean_filename = std::path::Path::new(&payload.file_name)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("document.pdf")
-        .replace(['/', '\\', '\0'], "_");
-    payload.file_name = clean_filename;
-
-    let conn = db.lock().map_err(|_| {
+    Extension(storage): Extension<DocumentStorage>,
+    mut multipart: Multipart,
+) -> Result<(StatusCode, Json<MedicalDocument>), DocumentError> {
+    let storage = require_storage(&storage)?;
+    let multipart_error = |error: axum::extract::multipart::MultipartError| {
         (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "DB Lock error".to_string(),
+            error.status(),
+            "Dépôt multipart invalide ou trop volumineux".into(),
         )
-    })?;
-    match db::create_document(&conn, payload) {
-        Ok(doc) => Ok((StatusCode::CREATED, Json(doc))),
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    };
+    let mut metadata = None;
+    let mut file = None;
+    while let Some(field) = multipart.next_field().await.map_err(multipart_error)? {
+        match field.name() {
+            Some("metadata") if metadata.is_none() => {
+                let bytes = field.bytes().await.map_err(multipart_error)?;
+                if bytes.len() > 64 * 1024 {
+                    return Err((
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        "Métadonnées trop volumineuses".into(),
+                    ));
+                }
+                metadata = Some(
+                    serde_json::from_slice::<CreateDocumentRequest>(&bytes)
+                        .map_err(|_| bad_upload("Métadonnées du document invalides"))?,
+                );
+            }
+            Some("file") if file.is_none() => {
+                let name = field
+                    .file_name()
+                    .ok_or(bad_upload("Nom de fichier obligatoire"))?
+                    .rsplit(['/', '\\'])
+                    .next()
+                    .unwrap_or_default()
+                    .chars()
+                    .filter(|c| !c.is_control())
+                    .collect::<String>();
+                let bytes = field.bytes().await.map_err(multipart_error)?;
+                if bytes.len() > MAX_FILE_BYTES {
+                    return Err((
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        "Taille maximale de 10 Mo".into(),
+                    ));
+                }
+                let mime = if bytes.starts_with(b"%PDF-") {
+                    "application/pdf"
+                } else if bytes.starts_with(b"\xff\xd8\xff") {
+                    "image/jpeg"
+                } else if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+                    "image/png"
+                } else {
+                    return Err((
+                        StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                        "Formats acceptés : PDF, JPG, PNG".into(),
+                    ));
+                };
+                if name.is_empty() {
+                    return Err(bad_upload("Nom de fichier obligatoire"));
+                }
+                file = Some((name, mime, bytes));
+            }
+            _ => return Err(bad_upload("Champs attendus : metadata et file")),
+        }
     }
+
+    let mut payload = metadata.ok_or(bad_upload("Métadonnées du document obligatoires"))?;
+    let (name, mime, bytes) = file.ok_or(bad_upload("Fichier obligatoire"))?;
+    if payload.title.trim().is_empty() || payload.doctor_or_lab.trim().is_empty() {
+        return Err(bad_upload("Titre et émetteur du document obligatoires"));
+    }
+    payload.file_name = name;
+    payload.file_type = mime.into();
+    payload.file_size_bytes = bytes.len() as u64;
+    payload.content_preview = None;
+
+    let id = format!("doc_{}", uuid::Uuid::new_v4().simple());
+    let path = object_path(&id);
+    storage
+        .put(&path, bytes.into())
+        .await
+        .map_err(storage_error)?;
+    let saved = db
+        .lock()
+        .map_err(database_error)
+        .and_then(|conn| db::create_document(&conn, payload, id).map_err(database_error));
+    match saved {
+        Ok(doc) => Ok((StatusCode::CREATED, Json(doc))),
+        Err(error) => {
+            if let Err(cleanup_error) = storage.delete(&path).await {
+                eprintln!("Failed to remove unindexed R2 object {path}: {cleanup_error}");
+            }
+            Err(error)
+        }
+    }
+}
+
+pub async fn download_document(
+    State(db): State<DbState>,
+    Extension(storage): Extension<DocumentStorage>,
+    Path(id): Path<String>,
+) -> Result<Response, DocumentError> {
+    let (name, mime) = stored_file(&db, &id)?.ok_or((
+        StatusCode::NOT_FOUND,
+        "Fichier original indisponible".into(),
+    ))?;
+    let result = require_storage(&storage)?
+        .get(&object_path(&id))
+        .await
+        .map_err(|error| match error {
+            object_store::Error::NotFound { .. } => (
+                StatusCode::NOT_FOUND,
+                "Fichier original indisponible".into(),
+            ),
+            other => storage_error(other),
+        })?;
+    let bytes = result.bytes().await.map_err(storage_error)?;
+    let encoded_name: String = name.bytes().map(|byte| format!("%{byte:02X}")).collect();
+    Ok((
+        [
+            (header::CONTENT_TYPE, mime),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename*=UTF-8''{encoded_name}"),
+            ),
+            (header::CACHE_CONTROL, "no-store".into()),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff".into()),
+        ],
+        bytes,
+    )
+        .into_response())
 }
 
 pub async fn delete_document(
     State(db): State<DbState>,
+    Extension(storage): Extension<DocumentStorage>,
     Path(id): Path<String>,
-) -> Result<StatusCode, (StatusCode, String)> {
-    let conn = db.lock().map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "DB Lock error".to_string(),
-        )
-    })?;
-    match db::delete_document(&conn, &id) {
-        Ok(_) => Ok(StatusCode::NO_CONTENT),
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+) -> Result<StatusCode, DocumentError> {
+    if stored_file(&db, &id)?.is_some() {
+        match require_storage(&storage)?.delete(&object_path(&id)).await {
+            Ok(()) | Err(object_store::Error::NotFound { .. }) => {}
+            Err(error) => return Err(storage_error(error)),
+        }
     }
+    let conn = db.lock().map_err(database_error)?;
+    db::delete_document(&conn, &id).map_err(database_error)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn get_sharing_sessions(

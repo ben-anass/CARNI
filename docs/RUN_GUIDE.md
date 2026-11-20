@@ -6,7 +6,7 @@ CARNI est un carnet de santé numérique intelligent et souverain conçu dans le
 ---
 
 ## Prérequis
-- **Rust & Cargo** : version 1.75+ ou 1.80+ (édition 2021/2024)
+- **Rust & Cargo** : version stable récente
 - **Node.js** : version 18+ (testé avec Node v20/v26)
 - **Navigateur moderne** (Chrome, Firefox, Safari, Edge)
 
@@ -83,3 +83,17 @@ Pour compiler le frontend :
 cd frontend
 npm run build
 ```
+
+## Stockage des fichiers dans Cloudflare R2
+
+Créez des identifiants S3 R2 avec la permission **Object Read & Write** pour le
+bucket privé `carni`. Définissez `R2_ACCESS_KEY_ID` et `R2_SECRET_ACCESS_KEY`
+dans l’environnement du processus backend avant de lancer `cargo run`.
+
+Le coffre-fort envoie les originaux PDF, JPEG et PNG (10 Mio maximum) au backend
+qui les stocke dans R2. SQLite conserve les métadonnées. Depuis le coffre-fort,
+ouvrez la fiche du document pour télécharger l’original. Les anciennes fiches
+restent accessibles et conservent leur aperçu existant.
+
+L’API patient du prototype fonctionne sans authentification. Gardez le
+serveur sur l’interface locale et utilisez des documents synthétiques.

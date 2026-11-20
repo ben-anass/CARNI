@@ -40,6 +40,10 @@ pub fn init_db(conn: &Connection) -> Result<()> {
             created_at TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS document_files (
+            document_id TEXT PRIMARY KEY REFERENCES documents(id)
+        );
+
         CREATE TABLE IF NOT EXISTS sharing_sessions (
             id TEXT PRIMARY KEY,
             token TEXT UNIQUE NOT NULL,
@@ -200,6 +204,7 @@ fn seed_if_empty(conn: &Connection) -> Result<()> {
     // Seed initial documents
     let initial_docs = vec![
         MedicalDocument {
+            has_file: false,
             id: "doc_001".to_string(),
             title: "Ordonnance Pneumologie — Ventoline 100µg".to_string(),
             category: "ORDONNANCE".to_string(),
@@ -214,6 +219,7 @@ fn seed_if_empty(conn: &Connection) -> Result<()> {
             created_at: Utc::now().to_rfc3339(),
         },
         MedicalDocument {
+            has_file: false,
             id: "doc_002".to_string(),
             title: "Rapport Biologique — Bilan Métabolique & Lipidique".to_string(),
             category: "BILAN".to_string(),
@@ -228,6 +234,7 @@ fn seed_if_empty(conn: &Connection) -> Result<()> {
             created_at: Utc::now().to_rfc3339(),
         },
         MedicalDocument {
+            has_file: false,
             id: "doc_003".to_string(),
             title: "Compte-Rendu Échographie Cardiaque Doppler".to_string(),
             category: "COMPTE_RENDU".to_string(),
@@ -528,7 +535,8 @@ pub fn delete_event(conn: &Connection, id: &str) -> Result<()> {
 
 pub fn get_documents(conn: &Connection) -> Result<Vec<MedicalDocument>> {
     let mut stmt = conn.prepare(
-        "SELECT id, title, category, file_name, file_type, file_size_bytes, issue_date, doctor_or_lab, notes, content_preview, tags_json, created_at
+        "SELECT id, title, category, file_name, file_type, file_size_bytes, issue_date, doctor_or_lab, notes, content_preview, tags_json, created_at,
+         EXISTS(SELECT 1 FROM document_files WHERE document_id = documents.id)
          FROM documents ORDER BY issue_date DESC",
     )?;
 
@@ -550,6 +558,7 @@ pub fn get_documents(conn: &Connection) -> Result<Vec<MedicalDocument>> {
             content_preview: row.get(9)?,
             tags,
             created_at: row.get(11)?,
+            has_file: row.get(12)?,
         })
     })?;
 
@@ -560,12 +569,16 @@ pub fn get_documents(conn: &Connection) -> Result<Vec<MedicalDocument>> {
     Ok(docs)
 }
 
-pub fn create_document(conn: &Connection, req: CreateDocumentRequest) -> Result<MedicalDocument> {
-    let id = format!("doc_{}", Uuid::new_v4().simple());
+pub fn create_document(
+    conn: &Connection,
+    req: CreateDocumentRequest,
+    id: String,
+) -> Result<MedicalDocument> {
+    let tx = conn.unchecked_transaction()?;
     let now = Utc::now().to_rfc3339();
     let tags_json = serde_json::to_string(&req.tags).unwrap_or_default();
 
-    conn.execute(
+    tx.execute(
         "INSERT INTO documents (id, title, category, file_name, file_type, file_size_bytes, issue_date, doctor_or_lab, notes, content_preview, tags_json, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         params![
@@ -584,8 +597,10 @@ pub fn create_document(conn: &Connection, req: CreateDocumentRequest) -> Result<
         ],
     )?;
 
+    tx.execute("INSERT INTO document_files (document_id) VALUES (?1)", [&id])?;
+
     add_audit_log(
-        conn,
+        &tx,
         "DOCUMENT_UPLOADED",
         "Yassine Mansouri (Patient)",
         "PATIENT",
@@ -594,7 +609,9 @@ pub fn create_document(conn: &Connection, req: CreateDocumentRequest) -> Result<
         "SUCCESS",
     )?;
 
+    tx.commit()?;
     Ok(MedicalDocument {
+        has_file: true,
         id,
         title: req.title,
         category: req.category,
@@ -611,9 +628,13 @@ pub fn create_document(conn: &Connection, req: CreateDocumentRequest) -> Result<
 }
 
 pub fn delete_document(conn: &Connection, id: &str) -> Result<()> {
-    conn.execute("DELETE FROM documents WHERE id = ?1", params![id])?;
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("DELETE FROM document_files WHERE document_id = ?1", [id])?;
+    if tx.execute("DELETE FROM documents WHERE id = ?1", [id])? == 0 {
+        return Ok(());
+    }
     add_audit_log(
-        conn,
+        &tx,
         "DOCUMENT_DELETED",
         "Yassine Mansouri (Patient)",
         "PATIENT",
@@ -621,7 +642,7 @@ pub fn delete_document(conn: &Connection, id: &str) -> Result<()> {
         &format!("Suppression de document du coffre-fort (ID: {})", id),
         "WARNING",
     )?;
-    Ok(())
+    tx.commit()
 }
 
 pub fn get_sharing_sessions(conn: &Connection) -> Result<Vec<SharingSession>> {
@@ -1091,12 +1112,14 @@ mod tests {
             tags: vec!["Test".to_string()],
         };
 
-        let created = create_document(&conn, req).expect("Should create document");
+        let created = create_document(&conn, req, "doc_test".into()).expect("Should create document");
         assert_eq!(created.file_name, "test_doc.pdf");
 
+        assert!(created.has_file);
         let docs_after = get_documents(&conn).expect("Should get docs");
         assert_eq!(docs_after.len(), initial_docs.len() + 1);
 
+        assert!(docs_after.iter().any(|doc| doc.id == created.id && doc.has_file));
         delete_document(&conn, &created.id).expect("Should delete document");
         let docs_final = get_documents(&conn).expect("Should get docs");
         assert_eq!(docs_final.len(), initial_docs.len());

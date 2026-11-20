@@ -15,6 +15,7 @@ import {
   FileSpreadsheet,
   FileImage,
 } from 'lucide-react';
+import { api } from '../../services/api';
 import { MedicalDocument, DocumentCategory } from '../../types';
 
 interface VaultViewProps {
@@ -84,7 +85,7 @@ export const VaultView: React.FC<VaultViewProps> = ({
               Coffre-fort Médical Sécurisé
             </h1>
             <span className="text-[10px] font-bold bg-teal-50 text-teal-700 border border-teal-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-              <ShieldCheck className="w-3 h-3" /> Chiffré
+              <ShieldCheck className="w-3 h-3" /> Coffre-fort
             </span>
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
@@ -218,21 +219,16 @@ export const VaultView: React.FC<VaultViewProps> = ({
                     <Eye className="w-3.5 h-3.5 text-teal-600" />
                     <span>Consulter aperçu</span>
                   </button>
-                  <button
-                    onClick={() => {
-                      const element = window.document.createElement('a');
-                      const file = new Blob([doc.content_preview || 'Document CARNI'], { type: 'text/plain' });
-                      element.href = URL.createObjectURL(file);
-                      element.download = doc.file_name;
-                      window.document.body.appendChild(element);
-                      element.click();
-                      window.document.body.removeChild(element);
-                    }}
-                    className="p-2 border border-slate-200 text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
-                    title="Télécharger"
-                  >
-                    <Download className="w-4 h-4" />
-                  </button>
+                  {doc.has_file && (
+                    <a
+                      href={api.documentDownloadUrl(doc.id)}
+                      className="p-2 border border-slate-200 text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                      title="Télécharger l’original"
+                      aria-label="Télécharger l’original"
+                    >
+                      <Download className="w-4 h-4" />
+                    </a>
+                  )}
                 </div>
               </div>
             );

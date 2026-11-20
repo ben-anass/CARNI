@@ -1,0 +1,47 @@
+# the network that 
+services:
+  # backend service 
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: carni-backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8080
+      DATABASE_URL: sqlite:///data/carni.db
+      VAULT_STORAGE_DIR: /data/vault
+      MAX_UPLOAD_BYTES: 10485760
+    volumes:
+      - sqlite_data:/data/db
+      - vault_data:/data/vault
+    ports:
+      - "8080:8080"
+    networks:
+      - carni_net
+  # frontend service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: http://localhost:8080
+    container_name: carni-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+    networks:
+      - carni_net
+# data volumes
+volumes:
+  sqlite_data:
+  vault_data:
+
+networks:
+  carni_net:
+    driver: bridge 

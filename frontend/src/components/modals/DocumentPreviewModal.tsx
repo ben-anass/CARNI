@@ -1,5 +1,6 @@
 import React from 'react';
-import { X, FileText, AlertCircle, Printer, Shield, Calendar, Building, Tag } from 'lucide-react';
+import { X, FileText, Download, Printer, Shield, Calendar, Building, Tag } from 'lucide-react';
+import { api } from '../../services/api';
 import { MedicalDocument } from '../../types';
 
 interface DocumentPreviewModalProps {
@@ -66,7 +67,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
           </div>
           <div className="flex items-center gap-1.5 text-teal-700 font-medium">
             <Shield className="w-3.5 h-3.5" />
-            <span>Document certifié CARNI Vault</span>
+            <span>Coffre-fort CARNI</span>
           </div>
         </div>
 
@@ -97,7 +98,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
 
             {/* Structured Text Content Preview */}
             <div className="text-xs leading-relaxed text-slate-700 whitespace-pre-line font-mono bg-slate-50/60 p-4 rounded-lg border border-slate-100">
-              {document.content_preview ||
+              {(document.content_preview?.startsWith('data:') ? undefined : document.content_preview) ||
                 `Document médical numérisé : ${document.title}\nÉmis par : ${document.doctor_or_lab}\nFichier source : ${document.file_name}\nFormat : ${document.file_type}`}
             </div>
 
@@ -123,17 +124,6 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
               </div>
             )}
 
-            {/* Doctor Signature Block */}
-            <div className="mt-8 pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-              <div>
-                <span>Signature électronique certifiée</span>
-                <p className="text-[10px] text-slate-400">Authentification SHA-256 valide</p>
-              </div>
-              <div className="text-right">
-                <span className="font-semibold text-slate-800">{document.doctor_or_lab}</span>
-                <p className="text-[10px] text-teal-600 font-bold uppercase">Cachet Numérique Apposé</p>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -150,24 +140,18 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
               <Printer className="w-4 h-4 text-slate-500" />
               <span>Imprimer</span>
             </button>
-            {/* PROTOTYPE LIMITATION: Binary file storage is not implemented in this sprint.
-                Only document metadata and a text preview are stored in the database.
-                The original binary file (PDF/image) is not retained on the server.
-                Download of the original file is therefore not available. */}
-            <div
-              title="Téléchargement non disponible — stockage binaire non implémenté (prototype)"
-              className="px-4 py-2 bg-slate-200 text-slate-500 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-not-allowed select-none"
-            >
-              <AlertCircle className="w-4 h-4" />
-              <span>Télécharger (prototype)</span>
-            </div>
+            {document.has_file ? (
+              <a
+                href={api.documentDownloadUrl(document.id)}
+                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5"
+              >
+                <Download className="w-4 h-4" />
+                Télécharger l’original
+              </a>
+            ) : (
+              <span className="text-xs text-slate-500">Fichier original indisponible</span>
+            )}
           </div>
-        </div>
-        {/* Prototype limitation notice */}
-        <div className="px-4 pb-3 bg-white">
-          <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 leading-relaxed">
-            <strong>Limitation prototype :</strong> Le stockage du fichier binaire original (PDF/image) n'est pas implémenté dans ce sprint. Seuls les métadonnées et l'aperçu textuel sont conservés. Le téléchargement du fichier original n'est pas disponible.
-          </p>
         </div>
       </div>
     </div>

@@ -5,7 +5,7 @@ import { MedicalDocument, DocumentCategory } from '../../types';
 interface DocumentUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onUpload: (doc: Omit<MedicalDocument, 'id' | 'created_at'>) => Promise<void>;
+  onUpload: (doc: Omit<MedicalDocument, 'id' | 'created_at'>, file: File) => Promise<void>;
   isDemoMode?: boolean;
 }
 
@@ -22,7 +22,6 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
   const [notes, setNotes] = useState('');
   const [tagsStr, setTagsStr] = useState('');
   const [file, setFile] = useState<File | null>(null);
-  const [fileDataUrl, setFileDataUrl] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -33,7 +32,6 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
     setFileError(null);
     if (!e.target.files || e.target.files.length === 0) {
       setFile(null);
-      setFileDataUrl(null);
       return;
     }
 
@@ -44,27 +42,16 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
     if (!allowedTypes.includes(selectedFile.type)) {
       setFileError('Format non autorisé. Formats acceptés : PDF, JPG, PNG.');
       setFile(null);
-      setFileDataUrl(null);
       return;
     }
 
     if (selectedFile.size > maxSizeBytes) {
       setFileError('Fichier trop volumineux. Taille maximale autorisée : 10 Mo.');
       setFile(null);
-      setFileDataUrl(null);
       return;
     }
 
     setFile(selectedFile);
-
-    // Read real file data URL for interactive preview
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setFileDataUrl(reader.result);
-      }
-    };
-    reader.readAsDataURL(selectedFile);
 
     if (!title.trim()) {
       const cleanName = selectedFile.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
@@ -102,11 +89,8 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
         issue_date: issueDate,
         doctor_or_lab: doctorOrLab.trim(),
         notes: notes.trim() || undefined,
-        content_preview:
-          fileDataUrl ||
-          `[Aperçu non disponible — fichier binaire non stocké]\n\nTitre : ${title.trim()}\nÉmetteur : ${doctorOrLab.trim()}\nDate : ${issueDate}\nFichier : ${file!.name} (${(file!.size / 1024).toFixed(1)} Ko)\nFormat : ${file!.type}`,
         tags,
-      });
+      }, file!);
       onClose();
     } catch (err: any) {
       setFileError(err?.message || 'Erreur lors du dépôt du document');
@@ -129,7 +113,7 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
                 Coffre-fort Médical Sécurisé
               </span>
               <h2 className="text-base font-bold text-white">
-                Ajouter un document médical certifié
+                Ajouter un document médical
               </h2>
             </div>
           </div>
@@ -174,7 +158,7 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
                     Cliquez ou glissez-déposez votre document ici
                   </p>
                   <p className="text-[11px] text-slate-400">
-                    PDF, JPG ou PNG • Taille max 10 Mo • Chiffrement local
+                    PDF, JPG ou PNG • Taille max 10 Mo
                   </p>
                 </div>
               )}
@@ -294,10 +278,9 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
             />
           </div>
 
-          {/* Prototype Storage Notice */}
-          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
-            <strong>⚠️ Limitation prototype :</strong> Seules les métadonnées du document sont stockées en base de données. Le fichier binaire original (PDF/image) n'est pas conservé sur le serveur dans cette version. Le téléchargement du fichier original ne sera pas possible.
-          </div>
+          {isDemoMode && (
+            <p className="text-xs text-amber-800">Mode démo. Le fichier original ne sera pas conservé.</p>
+          )}
 
           {/* Actions */}
           <div className="pt-2 flex items-center justify-end gap-2">
@@ -317,10 +300,10 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
               {isUploading ? (
                 <>
                   <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Chiffrement et dépôt...</span>
+                  <span>Dépôt en cours…</span>
                 </>
               ) : (
-                <span>Chiffrer et enregistrer</span>
+                <span>Enregistrer le document</span>
               )}
             </button>
           </div>
