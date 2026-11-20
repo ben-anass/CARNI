@@ -117,10 +117,10 @@ export const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
         </div>
       )}
 
-      {/* Secret token badge */}
+      {/* Sharing URL badge */}
       <div className="mt-3 w-full bg-slate-50 border border-slate-200/60 rounded-lg p-2.5 flex items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="text-[10px] uppercase font-bold text-slate-400">Jeton de partage sécurisé</div>
+          <div className="text-[10px] uppercase font-bold text-slate-400">Lien de partage sécurisé</div>
           <div className="text-xs font-mono font-medium text-teal-800 truncate">
             {value}
           </div>

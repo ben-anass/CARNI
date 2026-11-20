@@ -21,13 +21,13 @@ import {
   ConsentedPatientProfile,
 } from '../../types';
 import { api } from '../../services/api';
+import { BrandLogo } from '../common/BrandLogo';
 
 interface DoctorPortalViewProps {
   token?: string;
   patient: PatientProfile;
   events: HealthEvent[];
   documents: MedicalDocument[];
-  sessions: SharingSession[];
   onBackToApp: () => void;
   onPreviewDocument: (doc: MedicalDocument) => void;
 }
@@ -37,7 +37,6 @@ export const DoctorPortalView: React.FC<DoctorPortalViewProps> = ({
   patient: fallbackPatient,
   events: fallbackEvents,
   documents: fallbackDocuments,
-  sessions: fallbackSessions,
   onBackToApp,
   onPreviewDocument,
 }) => {
@@ -62,63 +61,16 @@ export const DoctorPortalView: React.FC<DoctorPortalViewProps> = ({
           setLoading(false);
         })
         .catch((err: Error) => {
-          // If network failed or offline, try to find in memory fallback
-          const localSession = fallbackSessions.find((s) => s.token === token);
-          if (localSession) {
-            const isExpired = new Date(localSession.expires_at).getTime() < Date.now();
-            if (localSession.is_revoked) {
-              setErrorCode('REVOKED');
-            } else if (isExpired) {
-              setErrorCode('EXPIRED');
-            } else {
-              setSession(localSession);
-              setPatient({
-                ...fallbackPatient,
-                allergies: localSession.scope.include_allergies ? fallbackPatient.allergies : undefined,
-                vitals: localSession.scope.include_vitals ? fallbackPatient.vitals : undefined,
-                emergency_contact: localSession.scope.include_emergency ? fallbackPatient.emergency_contact : undefined,
-              });
-              setConsentedEvents(
-                localSession.scope.all_events
-                  ? fallbackEvents
-                  : fallbackEvents.filter((e) => localSession.scope.event_ids.includes(e.id))
-              );
-              setConsentedDocuments(
-                localSession.scope.all_docs
-                  ? fallbackDocuments
-                  : fallbackDocuments.filter((d) => localSession.scope.doc_ids.includes(d.id))
-              );
-            }
-          } else {
-            setErrorCode(err.message || 'ACCESS_DENIED');
-          }
+          setSession(null);
+          setErrorCode(err.message || 'ACCESS_DENIED');
           setLoading(false);
         });
     } else {
-      // Direct preview without specific token: use first active session in memory
-      const active = fallbackSessions.find((s) => !s.is_revoked) || fallbackSessions[0];
-      if (active) {
-        setSession(active);
-        setPatient({
-          ...fallbackPatient,
-          allergies: active.scope.include_allergies ? fallbackPatient.allergies : undefined,
-          vitals: active.scope.include_vitals ? fallbackPatient.vitals : undefined,
-          emergency_contact: active.scope.include_emergency ? fallbackPatient.emergency_contact : undefined,
-        });
-        setConsentedEvents(
-          active.scope.all_events
-            ? fallbackEvents
-            : fallbackEvents.filter((e) => active.scope.event_ids.includes(e.id))
-        );
-        setConsentedDocuments(
-          active.scope.all_docs
-            ? fallbackDocuments
-            : fallbackDocuments.filter((d) => active.scope.doc_ids.includes(d.id))
-        );
-      }
+      setSession(null);
+      setErrorCode('NOT_FOUND');
       setLoading(false);
     }
-  }, [token, fallbackSessions, fallbackPatient, fallbackEvents, fallbackDocuments]);
+  }, [token]);
 
   const isInvalid = !session || session.is_revoked || errorCode !== null;
 
@@ -128,8 +80,8 @@ export const DoctorPortalView: React.FC<DoctorPortalViewProps> = ({
       <header className="bg-slate-900 text-white px-6 py-4 shadow-md sticky top-0 z-20">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-teal-500/20 text-teal-400 border border-teal-500/30 flex items-center justify-center font-bold text-lg">
-              <Stethoscope className="w-5 h-5" />
+            <div className="w-20 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center px-2">
+              <BrandLogo className="h-8 w-16" />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -183,7 +135,6 @@ export const DoctorPortalView: React.FC<DoctorPortalViewProps> = ({
                 : 'L\'accès à ce dossier médical a été verrouillé pour des raisons de sécurité ou de consentement révoqué.'}
             </p>
             <div className="mt-5 p-3.5 bg-slate-50 rounded-xl text-left font-mono text-[11px] text-slate-600 border border-slate-200 space-y-1.5">
-              <div>• Jeton : <strong className="text-teal-900">{token || 'Non spécifié'}</strong></div>
               <div>• Statut : <span className="text-rose-600 font-bold">{errorCode || 'Invalide / Révoqué'}</span></div>
               <div>• Sécurité : Zéro donnée médicale exposée</div>
             </div>
@@ -224,9 +175,6 @@ export const DoctorPortalView: React.FC<DoctorPortalViewProps> = ({
                 </div>
               </div>
 
-              <div className="text-xs text-slate-500 font-mono self-end sm:self-auto bg-white/70 px-2.5 py-1 rounded-lg border border-teal-100">
-                Jeton: {session.token.slice(0, 16)}...
-              </div>
             </div>
 
             {/* Patient Identity Banner */}

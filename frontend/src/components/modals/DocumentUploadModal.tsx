@@ -5,7 +5,10 @@ import { MedicalDocument, DocumentCategory } from '../../types';
 interface DocumentUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onUpload: (doc: Omit<MedicalDocument, 'id' | 'created_at'>) => Promise<void>;
+  onUpload: (
+    doc: Omit<MedicalDocument, 'id' | 'created_at'>,
+    onProgress?: (progress: number) => void
+  ) => Promise<void>;
   isDemoMode?: boolean;
 }
 
@@ -25,6 +28,7 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
   const [fileDataUrl, setFileDataUrl] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   if (!isOpen) return null;
@@ -92,6 +96,8 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
       .filter(Boolean);
 
     setIsUploading(true);
+    setUploadProgress(0);
+    setFileError(null);
     try {
       await onUpload({
         title: title.trim(),
@@ -106,7 +112,7 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
           fileDataUrl ||
           `[Aperçu non disponible — fichier binaire non stocké]\n\nTitre : ${title.trim()}\nÉmetteur : ${doctorOrLab.trim()}\nDate : ${issueDate}\nFichier : ${file!.name} (${(file!.size / 1024).toFixed(1)} Ko)\nFormat : ${file!.type}`,
         tags,
-      });
+      }, setUploadProgress);
       onClose();
     } catch (err: any) {
       setFileError(err?.message || 'Erreur lors du dépôt du document');
@@ -298,6 +304,21 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
           <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
             <strong>⚠️ Limitation prototype :</strong> Seules les métadonnées du document sont stockées en base de données. Le fichier binaire original (PDF/image) n'est pas conservé sur le serveur dans cette version. Le téléchargement du fichier original ne sera pas possible.
           </div>
+
+          {isUploading && (
+            <div className="space-y-1.5" aria-live="polite">
+              <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600">
+                <span>Envoi au serveur</span>
+                <span>{uploadProgress}%</span>
+              </div>
+              <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-teal-600 transition-all duration-200"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
 
           {/* Actions */}
           <div className="pt-2 flex items-center justify-end gap-2">

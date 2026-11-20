@@ -611,7 +611,10 @@ pub fn create_document(conn: &Connection, req: CreateDocumentRequest) -> Result<
 }
 
 pub fn delete_document(conn: &Connection, id: &str) -> Result<()> {
-    conn.execute("DELETE FROM documents WHERE id = ?1", params![id])?;
+    let deleted_rows = conn.execute("DELETE FROM documents WHERE id = ?1", params![id])?;
+    if deleted_rows == 0 {
+        return Err(rusqlite::Error::QueryReturnedNoRows);
+    }
     add_audit_log(
         conn,
         "DOCUMENT_DELETED",
@@ -729,10 +732,13 @@ pub fn create_sharing_session(
 }
 
 pub fn revoke_sharing_session(conn: &Connection, id: &str) -> Result<()> {
-    conn.execute(
+    let updated_rows = conn.execute(
         "UPDATE sharing_sessions SET is_revoked = 1 WHERE id = ?1",
         params![id],
     )?;
+    if updated_rows == 0 {
+        return Err(rusqlite::Error::QueryReturnedNoRows);
+    }
 
     add_audit_log(
         conn,
@@ -818,7 +824,7 @@ pub fn record_doctor_access(
         doctor_ip,
         &format!(
             "Consultation autorisée du dossier médical (Session: {}){}",
-            session.token,
+            session.id,
             if should_revoke {
                 " • Usage unique consommé"
             } else {

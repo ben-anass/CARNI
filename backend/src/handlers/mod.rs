@@ -222,6 +222,9 @@ pub async fn delete_document(
     })?;
     match db::delete_document(&conn, &id) {
         Ok(_) => Ok(StatusCode::NO_CONTENT),
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
+            Err((StatusCode::NOT_FOUND, "Document introuvable".to_string()))
+        }
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
 }
@@ -283,6 +286,9 @@ pub async fn revoke_sharing_session(
     })?;
     match db::revoke_sharing_session(&conn, &id) {
         Ok(_) => Ok(StatusCode::OK),
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
+            Err((StatusCode::NOT_FOUND, "Session de partage introuvable".to_string()))
+        }
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
 }
@@ -317,7 +323,7 @@ pub async fn access_shared_session(
             &session.recipient_label,
             "MEDECIN",
             "127.0.0.1",
-            &format!("Tentative d'accès rejetée : jeton révoqué ({})", token),
+            &format!("Tentative d'accès rejetée : session révoquée (ID: {})", session.id),
             "REVOKED",
         );
         return Err((
@@ -335,7 +341,7 @@ pub async fn access_shared_session(
                 &session.recipient_label,
                 "MEDECIN",
                 "127.0.0.1",
-                &format!("Tentative d'accès rejetée : session expirée ({})", token),
+                &format!("Tentative d'accès rejetée : session expirée (ID: {})", session.id),
                 "WARNING",
             );
             return Err((

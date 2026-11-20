@@ -1,4 +1,4 @@
-import { PatientProfile, HealthEvent, MedicalDocument, SharingSession, AuditLogEntry } from '../types';
+import { PatientProfile, HealthEvent, MedicalDocument, AuditLogEntry } from '../types';
 
 export const INITIAL_PATIENT: PatientProfile = {
   id: 'pat_morocco_01',
@@ -176,51 +176,6 @@ export const INITIAL_DOCUMENTS: MedicalDocument[] = [
     content_preview: 'ROYAUME DU MAROC - MINISTÈRE DE LA SANTÉ\nATTESTATION DE VACCINATION OFFICIELLE\n\nJe soussignée, Dr. Laila CHRAIBI, Médecin assermenté,\nCertifie avoir administré ce jour à Monsieur Yassine MANSOURI, né le 14/05/1992 à Casablanca :\n\n- Vaccin : DTP (Diphtérie, Tétanos, Poliomyélite)\n- Lot N° : VAX-89102-MA\n- Date d\'administration : 14 Août 2025\n- Site : Deltoïde gauche\n\nStatut d\'immunisation : À JOUR.\nProchaine dose de rappel prévue en 2035.',
     tags: ['Vaccin', 'DTP', 'Certificat'],
     created_at: '2025-08-14T10:00:00Z',
-  },
-];
-
-export const INITIAL_SHARING_SESSIONS: SharingSession[] = [
-  {
-    id: 'sh_active_01',
-    token: 'carni-sec-7f9a2b1c8e',
-    recipient_label: 'Dr. Omar Bennani (Cardiologue)',
-    purpose: 'Consultation annuelle et suivi échocardiographique',
-    scope: {
-      all_events: false,
-      event_ids: ['evt_001', 'evt_002'],
-      all_docs: false,
-      doc_ids: ['doc_002', 'doc_003'],
-      include_allergies: true,
-      include_vitals: true,
-      include_emergency: true,
-    },
-    expires_at: new Date(Date.now() + 45 * 60 * 1000).toISOString(), // 45 mins from now
-    created_at: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-    is_revoked: false,
-    access_count: 2,
-    last_accessed_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-    one_time_use: false,
-  },
-  {
-    id: 'sh_expired_02',
-    token: 'carni-sec-e431d87a90',
-    recipient_label: 'Centre Laser Vision (Dr. Nadia Fassi)',
-    purpose: 'Examen ophtalmologique et bilan fond d\'œil',
-    scope: {
-      all_events: false,
-      event_ids: ['evt_005'],
-      all_docs: false,
-      doc_ids: [],
-      include_allergies: true,
-      include_vitals: false,
-      include_emergency: false,
-    },
-    expires_at: new Date(Date.now() - 24 * 3600 * 1000).toISOString(), // expired yesterday
-    created_at: new Date(Date.now() - 26 * 3600 * 1000).toISOString(),
-    is_revoked: false,
-    access_count: 1,
-    last_accessed_at: new Date(Date.now() - 25 * 3600 * 1000).toISOString(),
-    one_time_use: true,
   },
 ];
 

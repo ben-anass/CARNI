@@ -3,7 +3,6 @@ import {
   INITIAL_PATIENT,
   INITIAL_EVENTS,
   INITIAL_DOCUMENTS,
-  INITIAL_SHARING_SESSIONS,
   INITIAL_AUDIT_LOGS,
 } from './data/mockData';
 import {
@@ -28,6 +27,7 @@ import { EventFormModal } from './components/modals/EventFormModal';
 import { DocumentUploadModal } from './components/modals/DocumentUploadModal';
 import { DocumentPreviewModal } from './components/modals/DocumentPreviewModal';
 import { ToastContainer, ToastMessage } from './components/common/Toast';
+import { BrandLogo } from './components/common/BrandLogo';
 
 export const App: React.FC = () => {
   // Main states — initialized to empty; filled from backend if reachable, mock data otherwise
@@ -107,7 +107,7 @@ export const App: React.FC = () => {
         setPatient(INITIAL_PATIENT);
         setEvents(INITIAL_EVENTS);
         setDocuments(INITIAL_DOCUMENTS);
-        setSharingSessions(INITIAL_SHARING_SESSIONS);
+        setSharingSessions([]);
         setAuditLogs(INITIAL_AUDIT_LOGS);
       }
     } catch {
@@ -116,7 +116,7 @@ export const App: React.FC = () => {
       setPatient(INITIAL_PATIENT);
       setEvents(INITIAL_EVENTS);
       setDocuments(INITIAL_DOCUMENTS);
-      setSharingSessions(INITIAL_SHARING_SESSIONS);
+      setSharingSessions([]);
       setAuditLogs(INITIAL_AUDIT_LOGS);
     } finally {
       setIsAppLoading(false);
@@ -245,22 +245,12 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleUploadDocument = async (docData: Omit<MedicalDocument, 'id' | 'created_at'>) => {
-    if (isDemoMode) {
-      const newDoc: MedicalDocument = {
-        ...docData,
-        id: `doc_local_${Date.now()}`,
-        created_at: new Date().toISOString(),
-      };
-      setDocuments((prev) => [newDoc, ...prev]);
-      addToast('warning', '[DÉMO] Document ajouté localement', 'Backend non connecté — le fichier n\'est pas stocké.');
-      return;
-    }
-
-    // Backend connected: send metadata to backend, await confirmation
-    // Note: binary file storage is not implemented — only metadata is stored (see PROTOTYPE_NOTE)
+  const handleUploadDocument = async (
+    docData: Omit<MedicalDocument, 'id' | 'created_at'>,
+    onProgress?: (progress: number) => void
+  ) => {
     try {
-      const created = await api.createDocument(docData);
+      const created = await api.createDocument(docData, onProgress);
       setDocuments((prev) => [created, ...prev]);
       addToast('success', 'Document enregistré', `"${created.title}" a été indexé dans le coffre-fort.`);
       const logs = await api.getAuditLogs();
@@ -272,13 +262,6 @@ export const App: React.FC = () => {
   };
 
   const handleDeleteDocument = async (id: string) => {
-    if (isDemoMode) {
-      const doc = documents.find((d) => d.id === id);
-      setDocuments((prev) => prev.filter((d) => d.id !== id));
-      addToast('warning', '[DÉMO] Document supprimé localement', doc ? `"${doc.title}"` : undefined);
-      return;
-    }
-
     const doc = documents.find((d) => d.id === id);
     try {
       await api.deleteDocument(id);
@@ -298,29 +281,6 @@ export const App: React.FC = () => {
     oneTimeUse: boolean,
     scope: SharingScope
   ) => {
-    if (isDemoMode) {
-      // Demo mode: generate a local-only session clearly marked as demo
-      const token = `DEMO-${Array.from(crypto.getRandomValues(new Uint8Array(8)))
-        .map((b) => b.toString(16).padStart(2, '0'))
-        .join('')}`;
-      const newSession: SharingSession = {
-        id: `sh_local_${Date.now()}`,
-        token,
-        recipient_label: recipientLabel,
-        purpose,
-        scope,
-        expires_at: new Date(Date.now() + durationMinutes * 60 * 1000).toISOString(),
-        created_at: new Date().toISOString(),
-        is_revoked: false,
-        access_count: 0,
-        one_time_use: oneTimeUse,
-      };
-      setSharingSessions((prev) => [newSession, ...prev]);
-      addToast('warning', '[DÉMO] Session créée localement', 'Backend non connecté — le QR code ne fonctionnera pas.');
-      return;
-    }
-
-    // Backend connected: backend generates the authoritative token
     try {
       const session = await api.createSharingSession({
         recipient_label: recipientLabel,
@@ -345,14 +305,6 @@ export const App: React.FC = () => {
   };
 
   const handleRevokeSession = async (sessionId: string) => {
-    if (isDemoMode) {
-      setSharingSessions((prev) =>
-        prev.map((s) => (s.id === sessionId ? { ...s, is_revoked: true } : s))
-      );
-      addToast('warning', '[DÉMO] Accès révoqué localement', 'Le jeton n\'est pas réellement invalidé (backend non connecté).');
-      return;
-    }
-
     try {
       await api.revokeSharingSession(sessionId);
       // Refresh from backend to get authoritative state
@@ -378,6 +330,7 @@ export const App: React.FC = () => {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center space-y-3">
+          <BrandLogo className="h-14 w-[164px] mx-auto" />
           <div className="w-10 h-10 border-4 border-teal-600 border-t-transparent rounded-full animate-spin mx-auto" />
           <p className="text-sm font-semibold text-slate-600">Connexion au serveur CARNI…</p>
         </div>
@@ -393,7 +346,6 @@ export const App: React.FC = () => {
         patient={patient}
         events={events}
         documents={documents}
-        sessions={sharingSessions}
         onBackToApp={() => setActiveTab('dashboard')}
         onPreviewDocument={(doc) => setPreviewDocument(doc)}
       />

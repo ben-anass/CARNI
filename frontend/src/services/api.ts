@@ -82,19 +82,58 @@ export const api = {
     return res.json();
   },
 
-  async createDocument(doc: Omit<MedicalDocument, 'id' | 'created_at'>): Promise<MedicalDocument> {
-    const res = await fetch(`${API_BASE}/documents`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(doc),
+  async createDocument(
+    doc: Omit<MedicalDocument, 'id' | 'created_at'>,
+    onProgress?: (progress: number) => void
+  ): Promise<MedicalDocument> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_BASE}/documents`, true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) {
+          onProgress(Math.round((event.loaded / event.total) * 100));
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(JSON.parse(xhr.responseText) as MedicalDocument);
+          } catch {
+            reject(new Error('Réponse invalide du serveur lors du dépôt du document.'));
+          }
+          return;
+        }
+
+        let message = xhr.responseText.trim();
+        if (message) {
+          try {
+            const parsed = JSON.parse(message);
+            message = parsed.message || parsed.error || message;
+          } catch {
+            // Keep the plain-text response as the API error.
+          }
+        }
+        reject(new Error(message || `Erreur lors du dépôt du document (HTTP ${xhr.status})`));
+      };
+
+      xhr.onerror = () => {
+        reject(new Error('Impossible de contacter le serveur lors du dépôt du document.'));
+      };
+
+      xhr.ontimeout = () => {
+        reject(new Error('Le dépôt du document a expiré.'));
+      };
+
+      xhr.send(JSON.stringify(doc));
     });
-    if (!res.ok) throw new Error('Erreur lors du dépôt du document');
-    return res.json();
   },
 
   async deleteDocument(id: string): Promise<void> {
     const res = await fetch(`${API_BASE}/documents/${id}`, { method: 'DELETE' });
-    if (!res.ok) throw new Error('Erreur lors de la suppression du document');
+    if (!res.ok) await throwEventMutationError(res, 'Erreur lors de la suppression du document');
   },
 
   async getSharingSessions(): Promise<SharingSession[]> {

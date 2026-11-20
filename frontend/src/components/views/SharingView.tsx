@@ -500,7 +500,12 @@ export const SharingView: React.FC<SharingViewProps> = ({
                             {session.recipient_label}
                           </span>
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                            Valide jusqu'à {new Date(session.expires_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                            Valide jusqu'au {new Date(session.expires_at).toLocaleString('fr-FR', {
+                              day: '2-digit',
+                              month: 'short',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
                           </span>
                         </div>
 
@@ -559,10 +564,19 @@ export const SharingView: React.FC<SharingViewProps> = ({
                       <div className="flex items-center gap-2">
                         <strong className="text-slate-800">{session.recipient_label}</strong>
                         <span className="text-[10px] font-mono text-slate-400">
-                          {session.token}
+                          Session {session.id}
                         </span>
                       </div>
                       <p className="text-slate-500 text-[11px] mt-0.5">{session.purpose}</p>
+                      <p className="text-slate-400 text-[10px] mt-0.5">
+                        Expiration : {new Date(session.expires_at).toLocaleString('fr-FR', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </p>
                     </div>
 
                     <div className="flex items-center gap-2">

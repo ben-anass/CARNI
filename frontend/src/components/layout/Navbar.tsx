@@ -1,6 +1,7 @@
 import React from 'react';
 import { Shield, AlertTriangle, Stethoscope, User, Menu, Wifi, WifiOff } from 'lucide-react';
 import { PatientProfile } from '../../types';
+import { BrandLogo } from '../common/BrandLogo';
 
 interface NavbarProps {
   patient: PatientProfile;
@@ -31,9 +32,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-500 to-teal-700 text-white flex items-center justify-center shadow-md shadow-teal-500/20 font-black text-lg tracking-wider">
-              C
-            </div>
+            <BrandLogo className="h-9 w-[106px]" />
             <div>
               <div className="flex items-center gap-1.5">
                 <span className="font-extrabold text-lg text-slate-900 tracking-tight">
