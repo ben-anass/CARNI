@@ -30,18 +30,20 @@ import { DocumentPreviewModal } from './components/modals/DocumentPreviewModal';
 import { ToastContainer, ToastMessage } from './components/common/Toast';
 
 export const App: React.FC = () => {
-  // Main states
+  // Main states — initialized to empty; filled from backend if reachable, mock data otherwise
   const [patient, setPatient] = useState<PatientProfile>(INITIAL_PATIENT);
-  const [events, setEvents] = useState<HealthEvent[]>(INITIAL_EVENTS);
-  const [documents, setDocuments] = useState<MedicalDocument[]>(INITIAL_DOCUMENTS);
-  const [sharingSessions, setSharingSessions] = useState<SharingSession[]>(INITIAL_SHARING_SESSIONS);
-  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(INITIAL_AUDIT_LOGS);
+  const [events, setEvents] = useState<HealthEvent[]>([]);
+  const [documents, setDocuments] = useState<MedicalDocument[]>([]);
+  const [sharingSessions, setSharingSessions] = useState<SharingSession[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
 
   // UI state
   const [activeTab, setActiveTab] = useState<TabType | 'doctor'>('dashboard');
   const [doctorToken, setDoctorToken] = useState<string | undefined>(undefined);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isBackendConnected, setIsBackendConnected] = useState(false);
+  const [isDemoMode, setIsDemoMode] = useState(false);
+  const [isAppLoading, setIsAppLoading] = useState(true);
 
   // Modals state
   const [isEmergencyOpen, setIsEmergencyOpen] = useState(false);
@@ -77,31 +79,68 @@ export const App: React.FC = () => {
     }
   }, []);
 
-  // Sync data with Rust backend API if reachable
+  // Load data from backend on mount; fall back to mock only if backend unreachable
   const loadBackendData = useCallback(async () => {
     try {
       const isAlive = await api.checkHealth();
       setIsBackendConnected(isAlive);
 
       if (isAlive) {
+        setIsDemoMode(false);
+        // Fetch all data from the real backend — await every call, surface errors
         const [pat, evts, docs, shares, logs] = await Promise.all([
-          api.getPatient().catch(() => INITIAL_PATIENT),
-          api.getEvents().catch(() => INITIAL_EVENTS),
-          api.getDocuments().catch(() => INITIAL_DOCUMENTS),
-          api.getSharingSessions().catch(() => INITIAL_SHARING_SESSIONS),
-          api.getAuditLogs().catch(() => INITIAL_AUDIT_LOGS),
+          api.getPatient(),
+          api.getEvents(),
+          api.getDocuments(),
+          api.getSharingSessions(),
+          api.getAuditLogs(),
         ]);
-
-        if (pat) setPatient(pat);
-        if (evts && evts.length > 0) setEvents(evts);
-        if (docs && docs.length > 0) setDocuments(docs);
-        if (shares && shares.length > 0) setSharingSessions(shares);
-        if (logs && logs.length > 0) setAuditLogs(logs);
+        setPatient(pat);
+        setEvents(evts);
+        setDocuments(docs);
+        setSharingSessions(shares);
+        setAuditLogs(logs);
+      } else {
+        // Backend unreachable: fall back to mock data with clear DEMO MODE indicator
+        setIsBackendConnected(false);
+        setIsDemoMode(true);
+        setPatient(INITIAL_PATIENT);
+        setEvents(INITIAL_EVENTS);
+        setDocuments(INITIAL_DOCUMENTS);
+        setSharingSessions(INITIAL_SHARING_SESSIONS);
+        setAuditLogs(INITIAL_AUDIT_LOGS);
       }
     } catch {
       setIsBackendConnected(false);
+      setIsDemoMode(true);
+      setPatient(INITIAL_PATIENT);
+      setEvents(INITIAL_EVENTS);
+      setDocuments(INITIAL_DOCUMENTS);
+      setSharingSessions(INITIAL_SHARING_SESSIONS);
+      setAuditLogs(INITIAL_AUDIT_LOGS);
+    } finally {
+      setIsAppLoading(false);
     }
   }, []);
+
+  // Refresh data lists from backend (called after every mutation)
+  const refreshAllData = useCallback(async () => {
+    if (!isBackendConnected) return;
+    try {
+      const [evts, docs, shares, logs] = await Promise.all([
+        api.getEvents(),
+        api.getDocuments(),
+        api.getSharingSessions(),
+        api.getAuditLogs(),
+      ]);
+      setEvents(evts);
+      setDocuments(docs);
+      setSharingSessions(shares);
+      setAuditLogs(logs);
+    } catch (err) {
+      console.error('Failed to refresh data from backend', err);
+    }
+  }, [isBackendConnected]);
 
   useEffect(() => {
     loadBackendData();
@@ -109,140 +148,121 @@ export const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [loadBackendData]);
 
-  // Event Handlers
+  // Event Handlers — always await API; show errors visibly; never create local fake records
+
   const handleSaveEvent = async (
     eventData: Omit<HealthEvent, 'id' | 'created_at'>,
     existingId?: string
   ) => {
-    if (existingId) {
-      // Update
-      const updatedList = events.map((e) =>
-        e.id === existingId
-          ? { ...e, ...eventData, updated_at: new Date().toISOString() }
-          : e
-      );
-      setEvents(updatedList);
-      addToast('success', 'Événement modifié', `"${eventData.title}" a été mis à jour.`);
-
-      // Log in audit
-      const auditEntry: AuditLogEntry = {
-        id: `log_${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        action: 'RECORD_UPDATED',
-        actor: 'Yassine Mansouri (Patient)',
-        actor_role: 'PATIENT',
-        ip_address: '127.0.0.1 (Local)',
-        details: `Modification de l'événement médical : ${eventData.title}`,
-        status: 'SUCCESS',
-      };
-      setAuditLogs((prev) => [auditEntry, ...prev]);
-
-      if (isBackendConnected) {
-        api.updateEvent(existingId, eventData).catch(console.error);
+    if (isDemoMode) {
+      // Demo mode: local-only mutations with clear warning
+      if (existingId) {
+        setEvents((prev) =>
+          prev.map((e) =>
+            e.id === existingId
+              ? { ...e, ...eventData, updated_at: new Date().toISOString() }
+              : e
+          )
+        );
+        addToast('warning', '[DÉMO] Événement modifié localement', 'Backend non connecté — données non persistées.');
+      } else {
+        const newEvent: HealthEvent = {
+          ...eventData,
+          id: `evt_local_${Date.now()}`,
+          created_at: new Date().toISOString(),
+        };
+        setEvents((prev) => [newEvent, ...prev]);
+        addToast('warning', '[DÉMO] Événement ajouté localement', 'Backend non connecté — données non persistées.');
       }
-    } else {
-      // Create new
-      const newId = `evt_${Date.now()}`;
-      const newEvent: HealthEvent = {
-        ...eventData,
-        id: newId,
-        created_at: new Date().toISOString(),
-      };
-      setEvents([newEvent, ...events]);
-      addToast('success', 'Événement ajouté', `"${eventData.title}" a été enregistré au carnet.`);
-
-      // Log in audit
-      const auditEntry: AuditLogEntry = {
-        id: `log_${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        action: 'RECORD_CREATED',
-        actor: 'Yassine Mansouri (Patient)',
-        actor_role: 'PATIENT',
-        ip_address: '127.0.0.1 (Local)',
-        details: `Ajout au carnet de santé : ${eventData.title} (${eventData.category})`,
-        status: 'SUCCESS',
-      };
-      setAuditLogs((prev) => [auditEntry, ...prev]);
-
-      if (isBackendConnected) {
-        api.createEvent(eventData).catch(console.error);
-      }
+      setEventToEdit(null);
+      return;
     }
-    setEventToEdit(null);
+
+    // Backend connected: await the API call, use the returned record (server ID/timestamp)
+    try {
+      if (existingId) {
+        const updated = await api.updateEvent(existingId, eventData);
+        setEvents((prev) => prev.map((e) => (e.id === existingId ? updated : e)));
+        addToast('success', 'Événement modifié', `"${updated.title}" a été mis à jour.`);
+      } else {
+        const created = await api.createEvent(eventData);
+        setEvents((prev) => [created, ...prev]);
+        addToast('success', 'Événement ajouté', `"${created.title}" a été enregistré au carnet.`);
+      }
+      // Refresh audit logs from backend (backend wrote the real audit entry)
+      const logs = await api.getAuditLogs();
+      setAuditLogs(logs);
+    } catch (err: any) {
+      addToast('error', 'Erreur', err?.message || 'Impossible de sauvegarder l\'événement.');
+      throw err; // let modal stay open so user can retry
+    } finally {
+      setEventToEdit(null);
+    }
   };
 
   const handleDeleteEvent = async (id: string) => {
-    const deleted = events.find((e) => e.id === id);
-    setEvents((prev) => prev.filter((e) => e.id !== id));
-    addToast('info', 'Événement supprimé', deleted ? `"${deleted.title}" a été retiré.` : undefined);
-
-    if (deleted) {
-      const auditEntry: AuditLogEntry = {
-        id: `log_${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        action: 'RECORD_DELETED',
-        actor: 'Yassine Mansouri (Patient)',
-        actor_role: 'PATIENT',
-        ip_address: '127.0.0.1 (Local)',
-        details: `Suppression de l'événement médical : ${deleted.title}`,
-        status: 'WARNING',
-      };
-      setAuditLogs((prev) => [auditEntry, ...prev]);
+    if (isDemoMode) {
+      const deleted = events.find((e) => e.id === id);
+      setEvents((prev) => prev.filter((e) => e.id !== id));
+      addToast('warning', '[DÉMO] Événement supprimé localement', deleted ? `"${deleted.title}"` : undefined);
+      return;
     }
 
-    if (isBackendConnected) {
-      api.deleteEvent(id).catch(console.error);
+    const deleted = events.find((e) => e.id === id);
+    try {
+      await api.deleteEvent(id);
+      setEvents((prev) => prev.filter((e) => e.id !== id));
+      addToast('info', 'Événement supprimé', deleted ? `"${deleted.title}" a été retiré.` : undefined);
+      const logs = await api.getAuditLogs();
+      setAuditLogs(logs);
+    } catch (err: any) {
+      addToast('error', 'Erreur de suppression', err?.message || 'Impossible de supprimer l\'événement.');
     }
   };
 
   const handleUploadDocument = async (docData: Omit<MedicalDocument, 'id' | 'created_at'>) => {
-    const newId = `doc_${Date.now()}`;
-    const newDoc: MedicalDocument = {
-      ...docData,
-      id: newId,
-      created_at: new Date().toISOString(),
-    };
-    setDocuments([newDoc, ...documents]);
-    addToast('success', 'Document certifié ajouté', `"${docData.title}" a été scellé dans le coffre-fort.`);
+    if (isDemoMode) {
+      const newDoc: MedicalDocument = {
+        ...docData,
+        id: `doc_local_${Date.now()}`,
+        created_at: new Date().toISOString(),
+      };
+      setDocuments((prev) => [newDoc, ...prev]);
+      addToast('warning', '[DÉMO] Document ajouté localement', 'Backend non connecté — le fichier n\'est pas stocké.');
+      return;
+    }
 
-    const auditEntry: AuditLogEntry = {
-      id: `log_${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      action: 'DOCUMENT_UPLOADED',
-      actor: 'Yassine Mansouri (Patient)',
-      actor_role: 'PATIENT',
-      ip_address: '127.0.0.1 (Local)',
-      details: `Dépôt sécurisé au coffre-fort : ${docData.title} (${(docData.file_size_bytes / 1024).toFixed(1)} Ko)`,
-      status: 'SUCCESS',
-    };
-    setAuditLogs((prev) => [auditEntry, ...prev]);
-
-    if (isBackendConnected) {
-      api.createDocument(docData).catch(console.error);
+    // Backend connected: send metadata to backend, await confirmation
+    // Note: binary file storage is not implemented — only metadata is stored (see PROTOTYPE_NOTE)
+    try {
+      const created = await api.createDocument(docData);
+      setDocuments((prev) => [created, ...prev]);
+      addToast('success', 'Document enregistré', `"${created.title}" a été indexé dans le coffre-fort.`);
+      const logs = await api.getAuditLogs();
+      setAuditLogs(logs);
+    } catch (err: any) {
+      addToast('error', 'Erreur de dépôt', err?.message || 'Impossible d\'enregistrer le document.');
+      throw err;
     }
   };
 
   const handleDeleteDocument = async (id: string) => {
-    const doc = documents.find((d) => d.id === id);
-    setDocuments((prev) => prev.filter((d) => d.id !== id));
-    addToast('info', 'Document supprimé', doc ? `"${doc.title}" a été supprimé.` : undefined);
-
-    if (doc) {
-      const auditEntry: AuditLogEntry = {
-        id: `log_${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        action: 'DOCUMENT_DELETED',
-        actor: 'Yassine Mansouri (Patient)',
-        actor_role: 'PATIENT',
-        ip_address: '127.0.0.1 (Local)',
-        details: `Suppression du document du coffre-fort : ${doc.title}`,
-        status: 'WARNING',
-      };
-      setAuditLogs((prev) => [auditEntry, ...prev]);
+    if (isDemoMode) {
+      const doc = documents.find((d) => d.id === id);
+      setDocuments((prev) => prev.filter((d) => d.id !== id));
+      addToast('warning', '[DÉMO] Document supprimé localement', doc ? `"${doc.title}"` : undefined);
+      return;
     }
 
-    if (isBackendConnected) {
-      api.deleteDocument(id).catch(console.error);
+    const doc = documents.find((d) => d.id === id);
+    try {
+      await api.deleteDocument(id);
+      setDocuments((prev) => prev.filter((d) => d.id !== id));
+      addToast('info', 'Document supprimé', doc ? `"${doc.title}" a été supprimé.` : undefined);
+      const logs = await api.getAuditLogs();
+      setAuditLogs(logs);
+    } catch (err: any) {
+      addToast('error', 'Erreur de suppression', err?.message || 'Impossible de supprimer le document.');
     }
   };
 
@@ -253,77 +273,73 @@ export const App: React.FC = () => {
     oneTimeUse: boolean,
     scope: SharingScope
   ) => {
-    // Generate unguessable random token
-    const randomHex = Array.from(crypto.getRandomValues(new Uint8Array(8)))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
-    const token = `carni-sec-${randomHex}`;
-    const newSession: SharingSession = {
-      id: `sh_${Date.now()}`,
-      token,
-      recipient_label: recipientLabel,
-      purpose,
-      scope,
-      expires_at: new Date(Date.now() + durationMinutes * 60 * 1000).toISOString(),
-      created_at: new Date().toISOString(),
-      is_revoked: false,
-      access_count: 0,
-      one_time_use: oneTimeUse,
-    };
+    if (isDemoMode) {
+      // Demo mode: generate a local-only session clearly marked as demo
+      const token = `DEMO-${Array.from(crypto.getRandomValues(new Uint8Array(8)))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('')}`;
+      const newSession: SharingSession = {
+        id: `sh_local_${Date.now()}`,
+        token,
+        recipient_label: recipientLabel,
+        purpose,
+        scope,
+        expires_at: new Date(Date.now() + durationMinutes * 60 * 1000).toISOString(),
+        created_at: new Date().toISOString(),
+        is_revoked: false,
+        access_count: 0,
+        one_time_use: oneTimeUse,
+      };
+      setSharingSessions((prev) => [newSession, ...prev]);
+      addToast('warning', '[DÉMO] Session créée localement', 'Backend non connecté — le QR code ne fonctionnera pas.');
+      return;
+    }
 
-    setSharingSessions([newSession, ...sharingSessions]);
-    addToast(
-      'success',
-      'QR Code de partage créé !',
-      `Session active pour ${recipientLabel} (${durationMinutes} min).`
-    );
-
-    const auditEntry: AuditLogEntry = {
-      id: `log_${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      action: 'SESSION_CREATED',
-      actor: 'Yassine Mansouri (Patient)',
-      actor_role: 'PATIENT',
-      ip_address: '127.0.0.1 (Local)',
-      details: `Création session QR Code (${durationMinutes} min) pour ${recipientLabel} • Scope: ${scope.all_events ? 'Tous les événements' : `${scope.event_ids.length} événements`}, ${scope.all_docs ? 'Tous les docs' : `${scope.doc_ids.length} docs`}`,
-      status: 'SUCCESS',
-    };
-    setAuditLogs((prev) => [auditEntry, ...prev]);
-
-    if (isBackendConnected) {
-      api.createSharingSession({
+    // Backend connected: backend generates the authoritative token
+    try {
+      const session = await api.createSharingSession({
         recipient_label: recipientLabel,
         purpose,
         duration_minutes: durationMinutes,
         one_time_use: oneTimeUse,
         scope,
-      }).catch(console.error);
+      });
+      // Use only the server-returned session (with server-generated token and ID)
+      setSharingSessions((prev) => [session, ...prev]);
+      addToast(
+        'success',
+        'QR Code de partage créé !',
+        `Session active pour ${session.recipient_label} (${durationMinutes} min).`
+      );
+      const logs = await api.getAuditLogs();
+      setAuditLogs(logs);
+    } catch (err: any) {
+      addToast('error', 'Erreur de création du partage', err?.message || 'Impossible de créer la session de partage.');
+      throw err;
     }
   };
 
   const handleRevokeSession = async (sessionId: string) => {
-    const session = sharingSessions.find((s) => s.id === sessionId);
-    setSharingSessions((prev) =>
-      prev.map((s) => (s.id === sessionId ? { ...s, is_revoked: true } : s))
-    );
-    addToast('info', 'Accès révoqué', 'Le jeton de partage a été invalidé immédiatement.');
-
-    if (session) {
-      const auditEntry: AuditLogEntry = {
-        id: `log_${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        action: 'SESSION_REVOKED',
-        actor: 'Yassine Mansouri (Patient)',
-        actor_role: 'PATIENT',
-        ip_address: '127.0.0.1 (Local)',
-        details: `Révocation manuelle immédiate de l'accès pour ${session.recipient_label} (token: ${session.token})`,
-        status: 'REVOKED',
-      };
-      setAuditLogs((prev) => [auditEntry, ...prev]);
+    if (isDemoMode) {
+      setSharingSessions((prev) =>
+        prev.map((s) => (s.id === sessionId ? { ...s, is_revoked: true } : s))
+      );
+      addToast('warning', '[DÉMO] Accès révoqué localement', 'Le jeton n\'est pas réellement invalidé (backend non connecté).');
+      return;
     }
 
-    if (isBackendConnected) {
-      api.revokeSharingSession(sessionId).catch(console.error);
+    try {
+      await api.revokeSharingSession(sessionId);
+      // Refresh from backend to get authoritative state
+      const [shares, logs] = await Promise.all([
+        api.getSharingSessions(),
+        api.getAuditLogs(),
+      ]);
+      setSharingSessions(shares);
+      setAuditLogs(logs);
+      addToast('info', 'Accès révoqué', 'Le jeton de partage a été invalidé côté serveur.');
+    } catch (err: any) {
+      addToast('error', 'Erreur de révocation', err?.message || 'Impossible de révoquer la session.');
     }
   };
 
@@ -331,6 +347,18 @@ export const App: React.FC = () => {
     setDoctorToken(token);
     setActiveTab('doctor');
   };
+
+  // Loading screen
+  if (isAppLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center space-y-3">
+          <div className="w-10 h-10 border-4 border-teal-600 border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-sm font-semibold text-slate-600">Connexion au serveur CARNI…</p>
+        </div>
+      </div>
+    );
+  }
 
   // If viewing Doctor Portal
   if (activeTab === 'doctor') {
@@ -353,6 +381,15 @@ export const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
+      {/* Demo Mode Banner — shown prominently when backend is not reachable */}
+      {isDemoMode && (
+        <div className="bg-amber-500 text-white text-center text-xs font-bold py-2 px-4">
+          ⚠️ MODE DÉMO — Backend non connecté. Les données affichées sont fictives et ne sont pas persistées. Lancez{' '}
+          <code className="bg-amber-600 px-1 rounded">cargo run</code> dans le dossier{' '}
+          <code className="bg-amber-600 px-1 rounded">backend/</code> pour activer le mode réel.
+        </div>
+      )}
+
       {/* Top Navbar */}
       <Navbar
         patient={patient}
@@ -389,6 +426,7 @@ export const App: React.FC = () => {
               }}
               onOpenUploadDoc={() => setIsUploadModalOpen(true)}
               onOpenEmergency={() => setIsEmergencyOpen(true)}
+              onOpenVitalsModal={() => setIsEmergencyOpen(false)} // placeholder — VitalsModal is not in scope
               onOpenDoctorPortal={(token) => handleOpenDoctorPortal(token)}
               onRevokeSession={handleRevokeSession}
             />
@@ -426,13 +464,14 @@ export const App: React.FC = () => {
               events={events}
               documents={documents}
               sessions={sharingSessions}
+              isDemoMode={isDemoMode}
               onCreateSession={handleCreateSharingSession}
               onRevokeSession={handleRevokeSession}
               onOpenDoctorPortal={handleOpenDoctorPortal}
             />
           )}
 
-          {activeTab === 'audit' && <AuditLogView logs={auditLogs} />}
+          {activeTab === 'audit' && <AuditLogView logs={auditLogs} isDemoMode={isDemoMode} />}
         </main>
       </div>
 
@@ -458,6 +497,7 @@ export const App: React.FC = () => {
         isOpen={isUploadModalOpen}
         onClose={() => setIsUploadModalOpen(false)}
         onUpload={handleUploadDocument}
+        isDemoMode={isDemoMode}
       />
 
       <DocumentPreviewModal

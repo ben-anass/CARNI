@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, FileText, Download, Printer, Shield, Calendar, Building, Tag } from 'lucide-react';
+import { X, FileText, AlertCircle, Printer, Shield, Calendar, Building, Tag } from 'lucide-react';
 import { MedicalDocument } from '../../types';
 
 interface DocumentPreviewModalProps {
@@ -150,22 +150,24 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
               <Printer className="w-4 h-4 text-slate-500" />
               <span>Imprimer</span>
             </button>
-            <button
-              onClick={() => {
-                const element = window.document.createElement('a');
-                const file = new Blob([document.content_preview || 'Document CARNI'], { type: 'text/plain' });
-                element.href = URL.createObjectURL(file);
-                element.download = document.file_name;
-                window.document.body.appendChild(element);
-                element.click();
-                window.document.body.removeChild(element);
-              }}
-              className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
+            {/* PROTOTYPE LIMITATION: Binary file storage is not implemented in this sprint.
+                Only document metadata and a text preview are stored in the database.
+                The original binary file (PDF/image) is not retained on the server.
+                Download of the original file is therefore not available. */}
+            <div
+              title="Téléchargement non disponible — stockage binaire non implémenté (prototype)"
+              className="px-4 py-2 bg-slate-200 text-slate-500 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-not-allowed select-none"
             >
-              <Download className="w-4 h-4" />
-              <span>Télécharger</span>
-            </button>
+              <AlertCircle className="w-4 h-4" />
+              <span>Télécharger (prototype)</span>
+            </div>
           </div>
+        </div>
+        {/* Prototype limitation notice */}
+        <div className="px-4 pb-3 bg-white">
+          <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 leading-relaxed">
+            <strong>Limitation prototype :</strong> Le stockage du fichier binaire original (PDF/image) n'est pas implémenté dans ce sprint. Seuls les métadonnées et l'aperçu textuel sont conservés. Le téléchargement du fichier original n'est pas disponible.
+          </p>
         </div>
       </div>
     </div>

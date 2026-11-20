@@ -30,14 +30,15 @@ interface SharingViewProps {
   events: HealthEvent[];
   documents: MedicalDocument[];
   sessions: SharingSession[];
+  isDemoMode?: boolean;
   onCreateSession: (
     recipient: string,
     purpose: string,
     durationMinutes: number,
     oneTimeUse: boolean,
     scope: SharingScope
-  ) => void;
-  onRevokeSession: (sessionId: string) => void;
+  ) => Promise<void>;
+  onRevokeSession: (sessionId: string) => Promise<void>;
   onOpenDoctorPortal: (token: string) => void;
 }
 
@@ -46,11 +47,14 @@ export const SharingView: React.FC<SharingViewProps> = ({
   events,
   documents,
   sessions,
+  isDemoMode = false,
   onCreateSession,
   onRevokeSession,
   onOpenDoctorPortal,
 }) => {
   const [activeTab, setActiveTab] = useState<'create' | 'list'>('create');
+  const [isCreating, setIsCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   // Form states for creating session
   const [recipient, setRecipient] = useState('Dr. Omar Bennani (Cardiologie)');
@@ -73,9 +77,11 @@ export const SharingView: React.FC<SharingViewProps> = ({
 
   const [createdSessionId, setCreatedSessionId] = useState<string | null>(null);
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!recipient.trim()) return;
+    setCreateError(null);
+    setIsCreating(true);
 
     const scope: SharingScope = {
       all_events: allEvents,
@@ -87,15 +93,20 @@ export const SharingView: React.FC<SharingViewProps> = ({
       include_emergency: includeEmergency,
     };
 
-    onCreateSession(
-      recipient.trim(),
-      purpose.trim() || 'Consultation de santé',
-      durationMinutes,
-      oneTimeUse,
-      scope
-    );
-
-    setActiveTab('list');
+    try {
+      await onCreateSession(
+        recipient.trim(),
+        purpose.trim() || 'Consultation de santé',
+        durationMinutes,
+        oneTimeUse,
+        scope
+      );
+      setActiveTab('list');
+    } catch (err: any) {
+      setCreateError(err?.message || 'Erreur lors de la création de la session de partage.');
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const toggleEventId = (id: string) => {
@@ -427,13 +438,26 @@ export const SharingView: React.FC<SharingViewProps> = ({
           </div>
 
           {/* Action Button */}
-          <div className="flex justify-end">
+          <div className="flex flex-col items-end gap-2">
+            {createError && (
+              <p className="text-xs text-rose-600 font-semibold">{createError}</p>
+            )}
             <button
               type="submit"
-              className="px-6 py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-sm font-bold flex items-center gap-2 shadow-md hover:scale-[1.01] transition-all"
+              disabled={isCreating}
+              className="px-6 py-3 bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white rounded-xl text-sm font-bold flex items-center gap-2 shadow-md hover:scale-[1.01] transition-all"
             >
-              <QrCode className="w-5 h-5" />
-              <span>Générer le QR Code Éphémère Sécurisé</span>
+              {isCreating ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Création en cours…</span>
+                </>
+              ) : (
+                <>
+                  <QrCode className="w-5 h-5" />
+                  <span>Générer le QR Code Éphémère Sécurisé</span>
+                </>
+              )}
             </button>
           </div>
         </form>

@@ -6,12 +6,14 @@ interface DocumentUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
   onUpload: (doc: Omit<MedicalDocument, 'id' | 'created_at'>) => Promise<void>;
+  isDemoMode?: boolean;
 }
 
 export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
   isOpen,
   onClose,
   onUpload,
+  isDemoMode = false,
 }) => {
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<DocumentCategory>('ORDONNANCE');
@@ -102,7 +104,7 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
         notes: notes.trim() || undefined,
         content_preview:
           fileDataUrl ||
-          `DOCUMENT MÉDICAL CERTIFIÉ CARNI\n\nTitre : ${title.trim()}\nÉmetteur : ${doctorOrLab.trim()}\nDate : ${issueDate}\nFichier : ${file!.name} (${(file!.size / 1024).toFixed(1)} Ko)\nFormat : ${file!.type}\n\nNotes : ${notes.trim() || 'Aucune note spécifique renseignée.'}\nTags : ${tags.join(', ') || 'Général'}`,
+          `[Aperçu non disponible — fichier binaire non stocké]\n\nTitre : ${title.trim()}\nÉmetteur : ${doctorOrLab.trim()}\nDate : ${issueDate}\nFichier : ${file!.name} (${(file!.size / 1024).toFixed(1)} Ko)\nFormat : ${file!.type}`,
         tags,
       });
       onClose();
@@ -290,6 +292,11 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
               onChange={(e) => setNotes(e.target.value)}
               className="w-full text-xs rounded-xl border border-slate-300 p-2.5 focus:border-teal-500 focus:ring-1 focus:ring-teal-500"
             />
+          </div>
+
+          {/* Prototype Storage Notice */}
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+            <strong>⚠️ Limitation prototype :</strong> Seules les métadonnées du document sont stockées en base de données. Le fichier binaire original (PDF/image) n'est pas conservé sur le serveur dans cette version. Le téléchargement du fichier original ne sera pas possible.
           </div>
 
           {/* Actions */}

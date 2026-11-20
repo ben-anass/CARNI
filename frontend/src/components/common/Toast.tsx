@@ -3,7 +3,7 @@ import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
 
 export interface ToastMessage {
   id: string;
-  type: 'success' | 'error' | 'info';
+  type: 'success' | 'error' | 'info' | 'warning';
   title: string;
   description?: string;
 }
@@ -26,12 +26,15 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
               ? 'bg-white/95 border-emerald-200 text-slate-800'
               : toast.type === 'error'
               ? 'bg-white/95 border-rose-200 text-slate-800'
+              : toast.type === 'warning'
+              ? 'bg-white/95 border-amber-300 text-slate-800'
               : 'bg-white/95 border-teal-200 text-slate-800'
           }`}
         >
           {toast.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />}
           {toast.type === 'error' && <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />}
           {toast.type === 'info' && <Info className="w-5 h-5 text-teal-600 shrink-0 mt-0.5" />}
+          {toast.type === 'warning' && <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />}
 
           <div className="flex-1 min-w-0">
             <h4 className="text-sm font-semibold text-slate-900">{toast.title}</h4>

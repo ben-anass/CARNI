@@ -18,9 +18,10 @@ import { AuditLogEntry, AuditActionType } from '../../types';
 
 interface AuditLogViewProps {
   logs: AuditLogEntry[];
+  isDemoMode?: boolean;
 }
 
-export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs }) => {
+export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, isDemoMode = false }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<string>('ALL');
 
@@ -100,15 +101,24 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs }) => {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-              Journal d'Audit & Traçabilité Souveraine
+              Journal d'Audit &amp; Traçabilité Souveraine
             </h1>
-            <span className="text-[10px] font-bold bg-teal-50 text-teal-700 border border-teal-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-              <ShieldCheck className="w-3 h-3" /> Immuable
+            {/* "Journalisé côté serveur" is accurate: audit records are written by the
+                backend after each operation. Tamper-resistance (append-only log, WORM
+                storage, cryptographic chaining) is not yet implemented — therefore we
+                do not claim the log is "immutable". */}
+            <span className="text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+              <ShieldCheck className="w-3 h-3" /> Journalisé côté serveur
             </span>
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            Historique certifié et horodaté de toutes les créations, accès médecins et révocations
+            Historique horodaté de toutes les créations, accès médecins et révocations
           </p>
+          {isDemoMode && (
+            <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mt-1">
+              ⚠️ MODE DÉMO — Ces entrées d'audit sont fictives et générées localement. Les journaux réels sont créés par le serveur après chaque opération.
+            </p>
+          )}
         </div>
 
         <button
@@ -228,7 +238,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs }) => {
       <div className="p-4 bg-teal-50/70 border border-teal-200 rounded-2xl flex items-start gap-3 text-xs text-teal-900">
         <ShieldCheck className="w-5 h-5 text-teal-600 shrink-0 mt-0.5" />
         <p className="leading-relaxed">
-          <strong>Principe de non-répudiation :</strong> Chaque scan de QR code, téléchargement de document ou tentative d'accès est tracé de manière indélébile dans ce journal d'audit afin de garantir au patient la transparence absolue sur l'usage de ses données de santé.
+          <strong>Principe de traçabilité :</strong> Chaque scan de QR code, accès médecin ou révocation est enregistré par le serveur dans ce journal d'audit afin de garantir au patient la transparence sur l'usage de ses données de santé. La résistance à la falsification (journaux immuables, stockage WORM, chaînage cryptographique) n'est pas encore implémentée dans ce sprint.
         </p>
       </div>
     </div>
